@@ -151,3 +151,36 @@
 [//]: # (Luci->Applications->luci-app-upnp)
 
 [//]: # (记得最后搜索 Netfilter Extensions 加上 CONFIG_NETFILTER_NETLINK_GLUE_CT=y)
+以上是原文的，以下是修改的内容
+1. 仓库与分支设置
+Repository: immortalwrt/immortalwrt (MT7621 架构通常在主库中，而不是单独的 ARM 库)。
+Branch: openwrt-24.10。
+ImmortalWrt 的版本号通常跟随 OpenWrt 的大版本。v24.10.4 是 openwrt-24.10 分支上的一个具体发布点。
+编译该分支通常会生成最新的 24.10.x 版本固件。如果你必须严格锁定在 v24.10.4 这个特定提交，可以将 branch 的默认值改为具体的 Tag 名称（例如 v24.10.4，如果该标签存在的话），但在 Actions 输入框中也可以手动修改为 v24.10.4 尝试直接拉取标签。通常建议使用分支以保证能获取到该系列的最新修复。
+2. 本地配置文件 (.config)
+在你的 GitHub 仓库根目录下，必须有一个 .config 文件。对于 HiWiFi HC5962，请确保包含以下关键配置（可以通过 make menuconfig 生成）：
+Target System: Ramips MIPS architecture
+Subtarget: MT7621 based boards
+Target Profile: HiWiFi HC5962 (或者在配置文件中体现为 CONFIG_TARGET_ramips_mt7621_DEVICE_hiwifi_hc5962=y)
+你可以在本地搭建环境运行：
+bash
+
+编辑
+
+
+
+make menuconfig
+# 选择 Target System (Ramips) -> Subtarget (MT7621) -> Target Profile (HiWiFi HC5962)
+# 保存后，将生成的 .config 上传到你的 GitHub 仓库根目录
+3. 自定义脚本 (diy.sh)
+如果你的仓库中有 diy.sh，它会在 feeds update 之前运行。你可以在这里添加额外的插件下载或配置文件替换。如果不需要，可以创建一个空的 diy.sh 文件或者在运行时忽略它（代码中已处理权限，若文件不存在会报错，所以建议创建一个空文件占位）。
+📥 如何获取固件
+运行 Action 后，等待编译完成。
+在 Artifacts 区域下载名为 ImmortalWrt-HiWiFi-HC5962 的压缩包。
+解压后，在 ramips/mt7621 目录下找到：
+immortalwrt-ramips-mt7621-hiwifi_hc5962-squashfs-sysupgrade.bin (用于升级，推荐)
+immortalwrt-ramips-mt7621-hiwifi_hc5962-squashfs-factory.bin (用于从原厂或其他 Breed/Uboot 刷入)
+💡 特别提示
+Breed/Uboot: 极路由 HC5962 通常需要刷入第三方 Bootloader (如 Breed) 才能方便地刷入 OpenWrt/ImmortalWrt。请确保你的路由器已经解锁并安装了兼容的 Bootloader。
+Flash 空间: HC5962 通常有 32MB Flash。如果编译的固件过大（超过 32MB），可能会失败或无法刷入。请在 menuconfig 中精简不必要的软件包，或者启用 Root filesystem archive 等压缩选项。
+版本确认: 编译完成后，可以在固件文件名或登录后的系统信息中确认版本号是否为 24.10.4 或其相近的修订版。

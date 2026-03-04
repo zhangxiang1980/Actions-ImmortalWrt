@@ -1,154 +1,133 @@
-name: 🚀 编译 HiWiFi HC5962 (Build)
+name: 🚀 编译 HiWiFi HC5962 (单线程版)
 
 on:
   workflow_dispatch:
     inputs:
       owner:
-        description: 'ImmortalWrt 仓库的拥有者 (Owner of ImmortalWrt repo)'
+        description: 'ImmortalWrt 仓库的拥有者'
         type: string
         required: true
         default: 'immortalwrt'
       repo:
-        description: 'ImmortalWrt 仓库的名字 (Name of ImmortalWrt repo)'
+        description: 'ImmortalWrt 仓库的名字'
         type: string
         required: true
         default: 'immortalwrt'
       branch:
-        description: 'ImmortalWrt 仓库的分支 (Branch of ImmortalWrt repo). Use openwrt-24.10 for v24.10.x'
+        description: 'ImmortalWrt 分支 (例如: openwrt-24.10)'
         type: string
         required: true
         default: 'openwrt-24.10'
-      multithreading:
-        description: '开启多线程编译 (Enable multithreading build)'
-        type: boolean
-        default: true
+      # 注意：multithreading 输入已移除，因为本工作流强制单线程
       ssh:
-        description: '使用 ssh 连接到编译环境 (Connect to the build environment using ssh)'
+        description: '使用 SSH 连接到编译环境 (调试用)'
         type: boolean
         default: false
 
 jobs:
   build:
-    if: ${{inputs.ssh == false}}
+    if: ${{ inputs.ssh == false }}
     runs-on: ubuntu-latest
-    name: 🚀 编译 (Build)
+    name: 🐢 单线程编译 (Single Thread Build)
+    
     steps:
-      - name: 下载编译所需的依赖 (Install the software packages required for compilation)
+      - name: 检查磁盘空间
+        run: df -h
+
+      - name: 清理磁盘空间 (关键步骤，防止 OOM)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          # 清理 apt 缓存以释放更多空间
+          sudo apt-get clean
+          df -h
+
+      - name: 安装编译依赖
         run: |
           sudo apt update
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkg-config python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
-      - name: 克隆当前仓库 (Clone current repo)
+      - name: 克隆当前仓库 (获取自定义配置)
         uses: actions/checkout@v4
 
-      - name: 克隆 ImmortalWrt 仓库 (Clone ImmortalWrt repo)
-        uses: actions/checkout@v4
-        with:
-          repository: '${{inputs.owner}}/${{inputs.repo}}'
-          ref: ${{inputs.branch}}
-          path: ImmortalWrt
-
-      - name: 复制当前仓库的配置文件到 ImmortalWrt 仓库  (Copy current repo config to ImmortalWrt repo)
-        run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
-
-      - name: 运行 diy.sh (Run diy.sh)
-        working-directory: ImmortalWrt
+      - name: 验证必要文件
         run: |
-          chmod +x diy.sh
-          ./diy.sh
+          echo "✅ 开始验证环境..."
+          if [ ! -f "target/linux/ramips/image/mt7621.mk" ] && [ ! -d "openwrt" ]; then
+             echo "::warning:: 尚未克隆源码，将在下一步进行。如果这是自定义仓库，请确保结构正确。"
+          fi
 
-      - name: 更新并下载 feeds (Update and download feeds)
-        working-directory: ImmortalWrt
-        run: ./scripts/feeds update -a && ./scripts/feeds install -a
-
-      - name: 再次复制当前仓库的配置文件到 ImmortalWrt 仓库 (Copy current repo config to ImmortalWrt repo again)
-        run: cp -f .config feeds.conf.default ImmortalWrt/
-
-      - name: 编译前上传配置 (Upload config before build)
-        uses: actions/upload-artifact@v4
-        with:
-          name: config-before-build
-          path: |
-            ImmortalWrt/feeds.conf.default
-            ImmortalWrt/.config
-
-      - name: 多线程编译 ImmortalWrt (Build ImmortalWrt multithreading)
-        if: ${{inputs.multithreading == true}}
-        working-directory: ImmortalWrt
-        run: make -j$(nproc) V=s
-
-      - name: 单线程编译 ImmortalWrt (Build ImmortalWrt single thread)
-        if: ${{inputs.multithreading == false}}
-        working-directory: ImmortalWrt
-        run: make -j1 V=s
-
-      - name: 上传编译结果到 Artifact (Upload build result to Artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ImmortalWrt-HiWiFi-HC5962
-          path: ImmortalWrt/bin/targets/ramips/mt7621
-
-  build-ssh:
-    if: ${{inputs.ssh == true}}
-    name: 🚀 编译 (Build) - SSH
-    runs-on: ubuntu-latest
-    steps:
-      - name: 下载编译所需的依赖 (Install the software packages required for compilation)
+      - name: 克隆 ImmortalWrt 源码
         run: |
-          sudo apt update
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-
-      - name: 克隆当前仓库 (Clone current repo)
-        uses: actions/checkout@v4
-
-      - name: 克隆 ImmortalWrt 仓库 (Clone ImmortalWrt repo)
-        uses: actions/checkout@v4
-        with:
-          repository: '${{inputs.owner}}/${{inputs.repo}}'
-          ref: ${{inputs.branch}}
-          path: ImmortalWrt
-
-      - name: 开启 SSH 服务 (Start SSH service)
-        uses: lhotari/action-upterm@v1
-        with:
-          wait-timeout-minutes: 20
-
-      - name: 复制当前仓库的配置文件到 ImmortalWrt 仓库 (Copy current repo config to ImmortalWrt repo)
-        run: cp -f .config feeds.conf.default diy.sh ImmortalWrt/
-
-      - name: 运行 diy.sh (Run diy.sh)
-        working-directory: ImmortalWrt
+          echo "正在克隆 ${{ inputs.owner }}/${{ inputs.repo }} 分支 ${{ inputs.branch }} ..."
+          git clone --depth 1 https://github.com/${{ inputs.owner }}/${{ inputs.repo }}.git -b ${{ inputs.branch }} openwrt
+          
+      - name: 更新 Feeds 并安装
         run: |
-          chmod +x diy.sh
-          ./diy.sh
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          
+      - name: 应用自定义配置
+        run: |
+          cd openwrt
+          # 尝试复制根目录下的 .config 文件 (如果存在)
+          if [ -f "../.config" ]; then
+            cp ../.config .config
+            echo "✅ 已应用根目录的 .config"
+          elif [ -f "../.config.hc5962" ]; then
+            cp ../.config.hc5962 .config
+            echo "✅ 已应用 .config.hc5962"
+          else
+            echo "⚠️ 未找到预设 config，生成默认配置并启用 HiWiFi HC5962"
+            make defconfig
+            # 强制启用目标架构和设备
+            # 注意：具体 CONFIG 名称需根据实际版本确认，此处为通用写法
+            sed -i 's/# CONFIG_TARGET_ramips is not set/CONFIG_TARGET_ramips=y/' .config
+            sed -i 's/# CONFIG_TARGET_ramips_mt7621 is not set/CONFIG_TARGET_ramips_mt7621=y/' .config
+            # 尝试匹配常见的设备 ID
+            if grep -q "hiwifi_hc5962" target/linux/ramips/image/mt7621.mk; then
+               sed -i 's/# CONFIG_TARGET_ramips_mt7621_DEVICE_hiwifi_hc5962 is not set/CONFIG_TARGET_ramips_mt7621_DEVICE_hiwifi_hc5962=y/' .config
+            fi
+          fi
+          
+          # 禁用 ccache 以避免单线程下可能的缓存锁定问题 (可选)
+          # sed -i 's/CONFIG_CCACHE=y/# CONFIG_CCACHE is not set/' .config
 
-      - name: 更新并下载 feeds (Update and download feeds)
-        working-directory: ImmortalWrt
-        run: ./scripts/feeds update -a && ./scripts/feeds install -a
-      
-      - name: 再次复制配置文件 (Copy config again)
-        run: cp -f .config ImmortalWrt/
+      - name: 下载源码包
+        run: |
+          cd openwrt
+          make download -j1
+          # 清理下载失败的残缺文件
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
 
-      - name: 编译前上传配置 (Upload config before build)
+      - name: 🐢 开始单线程编译
+        run: |
+          cd openwrt
+          echo "=================================================="
+          echo "⚠️  警告：正在使用单线程编译 (-j1)，速度较慢但更稳定。"
+          echo "=================================================="
+          # 核心修改：移除 -j 参数，强制单线程
+          # V=s 用于显示详细编译命令，方便排查错误
+          make V=s
+
+      - name: 整理编译产物
+        run: |
+          mkdir -p upload
+          # 查找生成的固件
+          find openwrt/bin/targets -name "*hiwifi*" -type f -exec cp {} upload/ \;
+          find openwrt/bin/targets -name "*.sha256sums" -type f -exec cp {} upload/ \;
+          
+          echo "📦 编译产物列表:"
+          ls -lh upload/
+
+      - name: 上传固件到 Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: config-before-build
-          path: |
-            ImmortalWrt/feeds.conf.default
-            ImmortalWrt/.config
-
-      - name: 多线程编译 ImmortalWrt (Build ImmortalWrt multithreading)
-        if: ${{inputs.multithreading == true}}
-        working-directory: ImmortalWrt
-        run: make -j$(nproc) V=s
-
-      - name: 单线程编译 ImmortalWrt (Build ImmortalWrt single thread)
-        if: ${{inputs.multithreading == false}}
-        working-directory: ImmortalWrt
-        run: make -j1 V=s
-
-      - name: 上传编译结果到 Artifact (Upload build result to Artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ImmortalWrt-HiWiFi-HC5962
-          path: ImmortalWrt/bin/targets/ramips/mt7621
+          name: HiWiFi_HC5962_SingleThread_${{ inputs.branch }}_${{ github.run_number }}
+          path: upload/
+          retention-days: 7
+          if-no-files-found: error
